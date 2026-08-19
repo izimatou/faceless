@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>SPECTRE//CAM</title>
+<style>
+  :root {
+    --cyan: #00f0ff;
+    --magenta: #ff2d95;
+    --lime: #9dff5a;
+    --bg: #05060a;
+    --ok: #2dff88;
+    --warn: #ff3355;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body {
+    height:100%; background:var(--bg); color:#e8f6ff;
+    font-family:"SF Mono", ui-monospace, Menlo, monospace;
+    overflow:hidden; overscroll-behavior:none;
+  }
+  #stage { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:var(--bg); }
+  #outCanvas { width:100%; height:100%; object-fit:cover; }
+  video { display:none; }
+
+  /* ---------- START ---------- */
+  #startScreen {
+    position:fixed; inset:0; z-index:50;
+    background:radial-gradient(120% 90% at 50% 0%, #071a24 0%, var(--bg) 60%);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:16px; padding:32px; text-align:center;
+  }
+  #startScreen h1 {
+    font-size:30px; letter-spacing:4px; font-weight:700;
+    background:linear-gradient(90deg, var(--cyan), #b8faff);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+  #verTag {
+    font-size:10px; letter-spacing:2px; color:var(--cyan);
+    border:1px solid rgba(0,240,255,.35); border-radius:3px; padding:5px 11px;
+  }
+  #startScreen p.sub { font-size:12px; color:#7fa8bd; letter-spacing:1px; max-width:340px; line-height:1.7; }
+  #startBtn {
+    margin-top:10px; padding:16px 34px; font-family:inherit; font-size:14px; letter-spacing:3px;
+    color:var(--bg); font-weight:700; background:linear-gradient(90deg, var(--cyan), #7ef5ff);
+    border:none; border-radius:4px; box-shadow:0 0 24px rgba(0,240,255,.45); cursor:pointer;
+  }
+  #startBtn:active { transform:scale(.97); }
+  #loadStatus { font-size:11px; color:var(--cyan); min-height:16px; letter-spacing:1px; }
+  #errBox {
+    display:none; font-size:12px; color:var(--warn);
+    border:1px solid rgba(255,51,85,.4); border-radius:6px; padding:12px 16px;
+    max-width:340px; line-height:1.6; text-align:left; background:rgba(255,51,85,.06);
+    white-space:pre-wrap;
+  }
+
+  /* ---------- HUD ---------- */
+  #hud { position:fixed; inset:0; z-index:20; display:none; pointer-events:none; }
+  #topBar {
+    position:absolute; top:0; left:0; right:0;
+    padding:calc(env(safe-area-inset-top, 0px) + 14px) 16px 10px;
+    display:flex; align-items:flex-start; justify-content:space-between; gap:8px;
+  }
+  .chip {
+    font-size:10px; letter-spacing:2px; padding:6px 10px; border-radius:3px;
+    border:1px solid; background:rgba(5,6,10,.55); backdrop-filter:blur(6px); white-space:pre;
+  }
+  #lockChip { color:var(--ok); border-color:rgba(45,255,136,.5); }
+  #lockChip.lost { color:#ffc861; border-color:rgba(255,200,97,.55); }
+  #lockChip.raw  { color:#ffc861; border-color:rgba(255,200,97,.55); }
+  #poseChip {
+    position:absolute; left:16px; top:calc(env(safe-area-inset-top, 0px) + 52px);
+    color:var(--cyan); border-color:rgba(0,240,255,.35); font-size:9px; line-height:1.6;
+    display:none;
+  }
+  #recChip { color:#fff; border-color:rgba(255,51,85,.7); display:none; align-items:center; gap:7px; }
+  #recChip .dot { width:8px; height:8px; border-radius:50%; background:var(--warn); display:inline-block; animation:blink 1s infinite; }
+  @keyframes blink { 50% { opacity:.15; } }
+
+  #gradeWrap {
+    position:absolute; left:0; right:0;
+    bottom:calc(env(safe-area-inset-bottom, 0px) + 122px);
+    display:flex; flex-direction:column; align-items:center; gap:7px;
+    pointer-events:auto; padding:0 40px;
+  }
+  #gradeLabel {
+    font-size:9px; letter-spacing:2px; color:rgba(0,240,255,.95);
+    background:rgba(5,6,10,.6); backdrop-filter:blur(6px);
+    padding:4px 9px; border-radius:3px; border:1px solid rgba(0,240,255,.28);
+  }
+  #grade {
+    -webkit-appearance:none; appearance:none; width:100%; max-width:240px; height:3px;
+    background:rgba(255,255,255,.22); border-radius:2px; outline:none;
+  }
+  #grade::-webkit-slider-thumb {
+    -webkit-appearance:none; width:20px; height:20px; border-radius:50%;
+    background:var(--cyan); box-shadow:0 0 12px rgba(0,240,255,.7); cursor:pointer;
+  }
+  #grade::-moz-range-thumb { width:20px; height:20px; border:none; border-radius:50%; background:var(--cyan); }
+
+  #bottomBar {
+    position:absolute; bottom:0; left:0; right:0;
+    padding:14px 26px calc(env(safe-area-inset-bottom, 0px) + 26px);
+    display:flex; align-items:center; justify-content:space-between; pointer-events:auto;
+  }
+  .sideBtn {
+    width:58px; height:58px; border-radius:50%;
+    border:1px solid rgba(0,240,255,.5); background:rgba(5,6,10,.55); backdrop-filter:blur(6px);
+    color:var(--cyan); font-family:inherit; font-size:9px; letter-spacing:1px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; cursor:pointer;
+  }
+  .sideBtn svg { width:20px; height:20px; fill:none; stroke:var(--cyan); stroke-width:1.6; }
+  .sideBtn:active { transform:scale(.94); }
+  #recBtn {
+    width:78px; height:78px; border-radius:50%; border:3px solid rgba(255,255,255,.85);
+    background:transparent; display:flex; align-items:center; justify-content:center; cursor:pointer;
+  }
+  #recBtn .core {
+    width:58px; height:58px; border-radius:50%; background:var(--warn);
+    transition:all .2s ease; box-shadow:0 0 18px rgba(255,51,85,.6);
+  }
+  #recBtn.rec .core { width:30px; height:30px; border-radius:6px; }
+  #effectName {
+    position:absolute; bottom:calc(env(safe-area-inset-bottom, 0px) + 170px);
+    left:0; right:0; text-align:center; font-size:11px; letter-spacing:3px;
+    color:var(--cyan); text-shadow:0 0 12px rgba(0,240,255,.8); opacity:0; transition:opacity .3s;
+  }
+
+  /* ---------- REVIEW ---------- */
+  #review {
+    position:fixed; inset:0; z-index:60; display:none;
+    background:rgba(3,4,8,.92); backdrop-filter:blur(10px);
+    flex-direction:column; align-items:center; justify-content:center; gap:16px; padding:24px;
+  }
+  #review h2 { font-size:13px; letter-spacing:3px; color:var(--cyan); }
+  #reviewVideo {
+    display:block; max-width:88vw; max-height:52vh;
+    border:1px solid rgba(0,240,255,.35); border-radius:8px; background:#000;
+  }
+  .rowBtns { display:flex; gap:12px; flex-wrap:wrap; justify-content:center; }
+  .actBtn { padding:14px 22px; font-family:inherit; font-size:12px; letter-spacing:2px; border-radius:4px; cursor:pointer; font-weight:700; text-decoration:none; }
+  .actBtn.primary { color:var(--bg); border:none; background:linear-gradient(90deg, var(--cyan), #7ef5ff); box-shadow:0 0 18px rgba(0,240,255,.4); }
+  .actBtn.ghost { color:#9fc4d8; background:transparent; border:1px solid rgba(159,196,216,.4); }
+  #saveHint { font-size:10px; color:#6d93a8; letter-spacing:1px; max-width:300px; text-align:center; line-height:1.6; }
+</style>
+</head>
+<body>
+
+<div id="stage"><canvas id="outCanvas"></canvas></div>
+<video id="cam" playsinline muted autoplay></video>
+
+<div id="startScreen">
+  <h1>SPECTRE//CAM</h1>
+  <div id="verTag">BUILD v3 · FACE MESH 3D</div>
+  <p class="sub">SUIVI FACIAL POLYGONAL TEMPS RÉEL<br>
+  478 points, maillage complet, profondeur 3D suivant la rotation de la tête.<br>
+  Caméra arrière : image brute. Bascule possible pendant l'enregistrement.</p>
+  <button id="startBtn">ACTIVER LA CAMÉRA</button>
+  <div id="loadStatus"></div>
+  <div id="errBox"></div>
+</div>
+
+<div id="hud">
+  <div id="topBar">
+    <span class="chip" id="lockChip">● MESH LOCK</span>
+    <span class="chip" id="recChip"><span class="dot"></span><span id="recTime">00:00</span></span>
+  </div>
+  <span class="chip" id="poseChip">YAW 0°</span>
+  <div id="effectName"></div>
+  <div id="gradeWrap">
+    <span id="gradeLabel">GRADE 55%</span>
+    <input type="range" id="grade" min="0" max="100" value="55">
+  </div>
+  <div id="bottomBar">
+    <button class="sideBtn" id="fxBtn">
+      <svg viewBox="0 0 24 24"><path d="M12 3 3 8v8l9 5 9-5V8zM3 8l9 5 9-5M12 13v8"/></svg>
+      MESH
+    </button>
+    <button id="recBtn"><div class="core"></div></button>
+    <button class="sideBtn" id="flipBtn">
+      <svg viewBox="0 0 24 24"><path d="M4 9a8 8 0 0 1 14-3l2 2M20 15a8 8 0 0 1-14 3l-2-2M20 4v4h-4M4 20v-4h4"/></svg>
+      FLIP
+    </button>
+  </div>
+</div>
+
+<div id="review">
+  <h2>// CLIP CAPTURÉ</h2>
+  <video id="reviewVideo" playsinline controls></video>
+  <div class="rowBtns">
+    <button class="actBtn primary" id="shareBtn">ENREGISTRER / PARTAGER</button>
+    <a class="actBtn ghost" id="dlBtn" download>TÉLÉCHARGER</a>
+    <button class="actBtn ghost" id="closeReview">REPRENDRE</button>
+  </div>
+  <p id="saveHint">Sur iPhone : « Enregistrer / Partager » puis « Enregistrer la vidéo » pour l'ajouter à Photos.</p>
+</div>
+
+<script type="module">
+/* =====================================================================
+   SPECTRE//CAM v3 — FACE MESH 3D
+   MediaPipe FaceLandmarker : 478 points (x, y, z) + matrice de pose de
+   la tête. Le maillage complet est tracé par tranches de profondeur :
+   les arêtes proches de l'objectif sont vives et épaisses, les arêtes
+   éloignées s'estompent -> le volume du visage se lit en rotation.
+   Un cube de suivi pivote avec la tête via la matrice de transformation.
+   ===================================================================== */
+
+import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+
+const $ = (id) => document.getElementById(id);
+const video = $("cam");
+const canvas = $("outCanvas");
+const ctx = canvas.getContext("2d", { alpha: false });
+
+const frame = document.createElement("canvas");
+const fctx = frame.getContext("2d", { alpha: false });
+
+const MODES = ["MESH//DENSE", "MESH//WIRE"];
+let modeIdx = 0;
+let gradeAmt = 0.55;
+
+let landmarker = null;
+let facing = "user";
+let running = false;
+
+let audioTracks = [], videoTrack = null;
+let switching = false, switchAt = -1e9;
+
+/* --- suivi --- */
+let lm = null;            // landmarks lissés [{x,y,z}]
+let pose = null;          // matrice 4x4 (column-major)
+let lastSeen = 0;
+let hasFace = false;
+
+/* --- jeux d'arêtes MediaPipe --- */
+let CONN_MESH = null, CONN_ACCENT = null, ACCENT_PTS = null;
+
+/* --- enregistrement --- */
+let recorder = null, chunks = [], recStart = 0, recTimerId = 0;
+let lastBlob = null, lastMime = "";
+
+/* --- perfs --- */
+let emaMs = 16, lastT = 0;
+let BANDS = 7;            // tranches de profondeur
+
+/* ================= init ================= */
+
+async function initLandmarker() {
+  $("loadStatus").textContent = "> CHARGEMENT DU MODULE DE SUIVI FACIAL…";
+  const fileset = await FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+  );
+  landmarker = await FaceLandmarker.createFromOptions(fileset, {
+    baseOptions: {
+      modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+      delegate: "GPU"
+    },
+    runningMode: "VIDEO",
+    numFaces: 1,
+    outputFaceBlendshapes: false,
+    outputFacialTransformationMatrixes: true
+  });
+  buildConnectionSets();
+  $("loadStatus").textContent = "> MODULE PRÊT";
+}
+
+function buildConnectionSets() {
+  const F = FaceLandmarker;
+  CONN_MESH = F.FACE_LANDMARKS_TESSELATION || [];
+  /* contours : ovale du visage, yeux, sourcils, lèvres, iris */
+  const parts = [
+    F.FACE_LANDMARKS_FACE_OVAL, F.FACE_LANDMARKS_LEFT_EYE, F.FACE_LANDMARKS_RIGHT_EYE,
+    F.FACE_LANDMARKS_LEFT_EYEBROW, F.FACE_LANDMARKS_RIGHT_EYEBROW,
+    F.FACE_LANDMARKS_LIPS, F.FACE_LANDMARKS_LEFT_IRIS, F.FACE_LANDMARKS_RIGHT_IRIS
+  ].filter(Boolean);
+  CONN_ACCENT = [].concat(...parts);
+  const s = new Set();
+  for (const c of CONN_ACCENT) { s.add(c.start); s.add(c.end); }
+  ACCENT_PTS = [...s];
+}
+
+async function openInitialStream() {
+  const s = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
+    audio: true
+  });
+  audioTracks = s.getAudioTracks();
+  videoTrack = s.getVideoTracks()[0];
+  await attachVideoTrack(videoTrack);
+}
+
+async function attachVideoTrack(track) {
+  video.srcObject = new MediaStream([track]);
+  await video.play();
+  if (!video.videoWidth) await new Promise(res => { video.onloadedmetadata = () => res(); });
+  sizeCanvases();
+}
+
+function sizeCanvases() {
+  const w = video.videoWidth || 1280, h = video.videoHeight || 720;
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w; canvas.height = h;
+    frame.width = w; frame.height = h;
+  }
+}
+
+function showError(msg) {
+  const box = $("errBox");
+  box.style.display = "block";
+  box.textContent = msg;
+  $("loadStatus").textContent = "";
+}
+
+$("startBtn").addEventListener("click", async () => {
+  $("errBox").style.display = "none";
+  if (!window.isSecureContext) {
+    showError("⚠ La caméra exige HTTPS. Ouvre cette page depuis une URL https:// (ou localhost).");
+    return;
+  }
+  try {
+    $("startBtn").disabled = true;
+    if (!landmarker) await initLandmarker();
+    $("loadStatus").textContent = "> OUVERTURE DE LA CAMÉRA…";
+    await openInitialStream();
+    $("startScreen").style.display = "none";
+    $("hud").style.display = "block";
+    running = true;
+    requestAnimationFrame(loop);
+    flashMode();
+  } catch (e) {
+    console.error(e);
+    $("startBtn").disabled = false;
+    showError("⚠ Impossible de démarrer : " + (e && e.message ? e.message : e) +
+      "\nVérifie l'autorisation caméra/micro dans Safari (Réglages > Safari > Caméra).");
+  }
+});
+
+/* ================= boucle ================= */
+
+function loop(now) {
+  if (!running) return;
+  sizeCanvases();
+  const W = canvas.width, H = canvas.height;
+
+  /* 1. image caméra remise à l'endroit */
+  fctx.save();
+  if (facing === "user") { fctx.translate(W, 0); fctx.scale(-1, 1); }
+  if (video.readyState >= 2) fctx.drawImage(video, 0, 0, W, H);
+  fctx.restore();
+  ctx.drawImage(frame, 0, 0);
+
+  const chip = $("lockChip");
+
+  if (facing === "environment") {
+    /* ---- CAMÉRA ARRIÈRE : image brute ---- */
+    lm = null; hasFace = false;
+    chip.textContent = "● REAR — RAW";
+    chip.className = "chip raw";
+    $("gradeWrap").style.display = "none";
+    $("poseChip").style.display = "none";
+  } else {
+    $("gradeWrap").style.display = "flex";
+
+    /* 2. étalonnage : désaturation progressive pour faire ressortir le cyan */
+    applyGrade(W, H);
+
+    /* 3. suivi */
+    if (landmarker && video.readyState >= 2 && !switching) {
+      let res = null;
+      try { res = landmarker.detectForVideo(video, now); } catch (e) {}
+      if (res && res.faceLandmarks && res.faceLandmarks.length) {
+        smoothLandmarks(res.faceLandmarks[0]);
+        pose = (res.facialTransformationMatrixes && res.facialTransformationMatrixes[0])
+          ? res.facialTransformationMatrixes[0].data : null;
+        lastSeen = now;
+      }
+    }
+    hasFace = lm && (now - lastSeen) < 500;
+
+    if (hasFace) {
+      drawMesh(lm, W, H, now);
+      chip.textContent = "● MESH LOCK · 478 PTS";
+      chip.className = "chip";
+      updatePoseChip();
+    } else {
+      chip.textContent = "● SEARCHING…";
+      chip.className = "chip lost";
+      $("poseChip").style.display = "none";
+    }
+  }
+
+  const dt = now - switchAt;
+  if (dt < 420) drawSwitchWipe(dt / 420, W, H);
+
+  if (lastT) {
+    emaMs = emaMs * 0.9 + (now - lastT) * 0.1;
+    if (emaMs > 40 && BANDS > 3) BANDS -= 1;
+    else if (emaMs < 24 && BANDS < 8) BANDS += 1;
+  }
+  lastT = now;
+
+  requestAnimationFrame(loop);
+}
+
+/* désaturation + léger contraste, dosés par le curseur GRADE */
+function applyGrade(W, H) {
+  if (gradeAmt < 0.02) return;
+  ctx.save();
+  ctx.globalCompositeOperation = "saturation";
+  ctx.globalAlpha = gradeAmt;
+  ctx.fillStyle = "hsl(0,0%,50%)";
+  ctx.fillRect(0, 0, W, H);
+  ctx.globalCompositeOperation = "multiply";
+  ctx.globalAlpha = gradeAmt * 0.28;
+  ctx.fillStyle = "#8f9fb5";
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = "source-over";
+}
+
+/* lissage temporel : supprime le tremblement des points */
+function smoothLandmarks(next) {
+  if (!lm || lm.length !== next.length) {
+    lm = next.map(p => ({ x: p.x, y: p.y, z: p.z }));
+    return;
+  }
+  const a = 0.55;
+  for (let i = 0; i < next.length; i++) {
+    lm[i].x += (next[i].x - lm[i].x) * a;
+    lm[i].y += (next[i].y - lm[i].y) * a;
+    lm[i].z += (next[i].z - lm[i].z) * a;
+  }
+}
+
+/* ================= rendu du maillage ================= */
+
+function drawMesh(pts, W, H, now) {
+  const mirror = facing === "user";
+  const PX = p => (mirror ? (1 - p.x) : p.x) * W;
+  const PY = p => p.y * H;
+
+  /* échelle : taille apparente du visage */
+  let minX = 1, maxX = 0, minY = 1, maxY = 0, minZ = 1e9, maxZ = -1e9;
+  for (const p of pts) {
+    if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+    if (p.z < minZ) minZ = p.z; if (p.z > maxZ) maxZ = p.z;
+  }
+  const faceW = (maxX - minX) * W;
+  const faceH = (maxY - minY) * H;
+  const zSpan = Math.max(1e-6, maxZ - minZ);
+  const unit = Math.max(1, faceW / 260);   // épaisseur de référence
+
+  const dense = modeIdx === 0;
+
+  /* ---- 1. maillage complet, réparti en tranches de profondeur ----
+     z de MediaPipe : plus petit = plus proche de l'objectif.
+     Chaque tranche est tracée d'un seul trait -> peu d'appels de dessin. */
+  if (dense && CONN_MESH && CONN_MESH.length) {
+    const paths = Array.from({ length: BANDS }, () => new Path2D());
+    for (const c of CONN_MESH) {
+      const a = pts[c.start], b = pts[c.end];
+      if (!a || !b) continue;
+      const zMid = ((a.z + b.z) / 2 - minZ) / zSpan;   // 0 = proche, 1 = loin
+      let bi = (zMid * BANDS) | 0;
+      if (bi < 0) bi = 0; if (bi >= BANDS) bi = BANDS - 1;
+      const p = paths[bi];
+      p.moveTo(PX(a), PY(a));
+      p.lineTo(PX(b), PY(b));
+    }
+    ctx.save();
+    ctx.lineCap = "round";
+    for (let i = 0; i < BANDS; i++) {
+      const t = i / (BANDS - 1 || 1);            // 0 proche -> 1 loin
+      const alpha = 0.92 - t * 0.72;             // les arêtes du fond s'effacent
+      const lw = unit * (1.15 - t * 0.72);
+      /* teinte : cyan vif devant, bleu profond derrière */
+      const g = Math.round(240 - t * 90);
+      const bl = Math.round(255 - t * 40);
+      ctx.strokeStyle = `rgba(0,${g},${bl},${alpha.toFixed(3)})`;
+      ctx.lineWidth = Math.max(0.4, lw);
+      ctx.stroke(paths[i]);
+    }
+    ctx.restore();
+  }
+
+  /* ---- 2. contours accentués (yeux, lèvres, ovale, iris, sourcils) ---- */
+  if (CONN_ACCENT && CONN_ACCENT.length) {
+    const acc = new Path2D();
+    for (const c of CONN_ACCENT) {
+      const a = pts[c.start], b = pts[c.end];
+      if (!a || !b) continue;
+      acc.moveTo(PX(a), PY(a));
+      acc.lineTo(PX(b), PY(b));
+    }
+    ctx.save();
+    ctx.lineCap = "round"; ctx.lineJoin = "round";
+    ctx.globalCompositeOperation = "lighter";
+    ctx.strokeStyle = "rgba(0,240,255,0.22)";     // halo
+    ctx.lineWidth = unit * 3.4;
+    ctx.stroke(acc);
+    ctx.strokeStyle = "rgba(150,250,255,0.95)";   // cœur net
+    ctx.lineWidth = Math.max(1, unit * 1.15);
+    ctx.stroke(acc);
+    ctx.restore();
+  }
+
+  /* ---- 3. marqueurs carrés sur les points clés ---- */
+  if (ACCENT_PTS && ACCENT_PTS.length) {
+    const s = Math.max(2, unit * (dense ? 2.0 : 2.8));
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.strokeStyle = "rgba(0,240,255,0.9)";
+    ctx.lineWidth = Math.max(0.8, unit * 0.55);
+    ctx.beginPath();
+    const stride = dense ? 3 : 1;                 // en dense, un point sur trois
+    for (let i = 0; i < ACCENT_PTS.length; i += stride) {
+      const p = pts[ACCENT_PTS[i]];
+      if (!p) continue;
+      ctx.rect(PX(p) - s / 2, PY(p) - s / 2, s, s);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /* ---- 4. cube de suivi pivotant avec la tête ---- */
+  if (pose) {
+    const ctrX = ((mirror ? (1 - (minX + maxX) / 2) : (minX + maxX) / 2)) * W;
+    const ctrY = ((minY + maxY) / 2) * H;
+    drawPoseBox(ctrX, ctrY, faceW, faceH, unit, mirror);
+  }
+}
+
+/* Cube filaire orienté par la matrice de pose de la tête.
+   Projection en perspective faible : suffisant pour lire la rotation. */
+function drawPoseBox(cx, cy, faceW, faceH, unit, mirror) {
+  const m = pose;
+  /* colonnes de la matrice = axes du repère tête */
+  let ax = [m[0], m[1], m[2]];
+  let ay = [m[4], m[5], m[6]];
+  let az = [m[8], m[9], m[10]];
+  if (mirror) { ax = [-ax[0], ax[1], ax[2]]; ay = [-ay[0], ay[1], ay[2]]; az = [-az[0], az[1], az[2]]; }
+
+  /* demi-dimensions : la boîte épouse la tête sans la déborder */
+  const sx = faceW * 0.40, sy = faceH * 0.42, sz = faceW * 0.36;
+
+  const corners = [];
+  for (const dz of [-1, 1]) for (const dy of [-1, 1]) for (const dx of [-1, 1]) {
+    const vx = ax[0] * dx * sx + ay[0] * dy * sy + az[0] * dz * sz;
+    const vy = ax[1] * dx * sx + ay[1] * dy * sy + az[1] * dz * sz;
+    const vz = ax[2] * dx * sx + ay[2] * dy * sy + az[2] * dz * sz;
+    const k = 1 / (1 + vz / (faceW * 14));       // perspective très douce
+    corners.push({ x: cx + vx * k, y: cy - vy * k, depth: vz });
+  }
+  const E = [[0,1],[1,3],[3,2],[2,0],[4,5],[5,7],[7,6],[6,4],[0,4],[1,5],[2,6],[3,7]];
+
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  ctx.lineWidth = Math.max(1, unit * 0.9);
+  for (const [i, j] of E) {
+    const a = corners[i], b = corners[j];
+    const near = (a.depth + b.depth) / 2 < 0;
+    ctx.strokeStyle = near ? "rgba(0,240,255,0.75)" : "rgba(0,140,190,0.3)";
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+  }
+  /* équerres aux sommets avant */
+  ctx.fillStyle = "rgba(0,240,255,0.85)";
+  const s = Math.max(2, unit * 2.2);
+  for (const c of corners) {
+    if (c.depth >= 0) continue;
+    ctx.fillRect(c.x - s / 2, c.y - s / 2, s, s);
+  }
+  ctx.restore();
+}
+
+/* lecture yaw / pitch / roll depuis la matrice de pose */
+function updatePoseChip() {
+  const el = $("poseChip");
+  if (!pose) { el.style.display = "none"; return; }
+  const m = pose;
+  const r00 = m[0], r10 = m[1], r20 = m[2], r21 = m[6], r22 = m[10];
+  const D = 180 / Math.PI;
+  let pitch = Math.atan2(r21, r22) * D;
+  let yaw = Math.atan2(-r20, Math.hypot(r21, r22)) * D;
+  let roll = Math.atan2(r10, r00) * D;
+  if (facing === "user") { yaw = -yaw; roll = -roll; }
+  const f = v => (v >= 0 ? "+" : "") + v.toFixed(0).padStart(3, " ") + "°";
+  el.textContent = "YAW  " + f(yaw) + "\nPITCH" + f(pitch) + "\nROLL " + f(roll);
+  el.style.display = "block";
+}
+
+/* ---------- transition de bascule caméra ---------- */
+let seed = 1;
+function rnd() { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; }
+function drawSwitchWipe(t, W, H) {
+  seed = ((t * 997) | 0) + 5;
+  const a = 1 - t;
+  ctx.save();
+  ctx.globalAlpha = a;
+  ctx.fillStyle = "#04050a";
+  const bandH = H * 0.06;
+  for (let y = 0; y < H; y += bandH) {
+    if (rnd() < t) continue;
+    ctx.fillRect(0, y, W, bandH * (0.5 + rnd() * 0.6));
+  }
+  ctx.globalCompositeOperation = "lighter";
+  for (let i = 0; i < 8; i++) {
+    ctx.fillStyle = rnd() < 0.5 ? "#00f0ff" : "#ffffff";
+    ctx.globalAlpha = a * 0.5;
+    ctx.fillRect(0, rnd() * H, W, Math.max(2, H * 0.004));
+  }
+  ctx.restore();
+  ctx.globalAlpha = 1;
+}
+
+/* ================= contrôles ================= */
+
+$("fxBtn").addEventListener("click", () => {
+  modeIdx = (modeIdx + 1) % MODES.length;
+  flashMode();
+});
+
+function flashMode() {
+  const el = $("effectName");
+  el.textContent = "▶ " + MODES[modeIdx];
+  el.style.opacity = 1;
+  clearTimeout(el._t);
+  el._t = setTimeout(() => (el.style.opacity = 0), 1400);
+}
+
+$("grade").addEventListener("input", e => {
+  gradeAmt = e.target.value / 100;
+  $("gradeLabel").textContent = "GRADE " + e.target.value + "%";
+});
+
+async function flipCamera() {
+  if (switching) return;
+  switching = true;
+  const target = facing === "user" ? "environment" : "user";
+  const oldTrack = videoTrack;
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: target }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }
+    });
+    if (oldTrack) oldTrack.stop();
+    videoTrack = s.getVideoTracks()[0];
+    facing = target;
+    lm = null; pose = null; hasFace = false;
+    await attachVideoTrack(videoTrack);
+    switchAt = performance.now();
+  } catch (e) {
+    console.error("flip failed", e);
+    try {
+      const s2 = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing } });
+      videoTrack = s2.getVideoTracks()[0];
+      await attachVideoTrack(videoTrack);
+    } catch (e2) { console.error(e2); }
+  } finally {
+    switching = false;
+  }
+}
+$("flipBtn").addEventListener("click", flipCamera);
+
+/* ================= enregistrement ================= */
+
+function pickMime() {
+  const c = ['video/mp4;codecs="avc1.42E01E,mp4a.40.2"', "video/mp4", 'video/webm;codecs="vp9,opus"', "video/webm"];
+  for (const m of c) { try { if (MediaRecorder.isTypeSupported(m)) return m; } catch (e) {} }
+  return "";
+}
+
+$("recBtn").addEventListener("click", () => {
+  if (recorder && recorder.state === "recording") stopRec(); else startRec();
+});
+
+function startRec() {
+  const cs = canvas.captureStream(30);
+  for (const t of audioTracks) cs.addTrack(t);
+  lastMime = pickMime();
+  chunks = [];
+  try {
+    recorder = new MediaRecorder(cs, { mimeType: lastMime || undefined, videoBitsPerSecond: 8_000_000 });
+  } catch (e) {
+    recorder = new MediaRecorder(cs);
+    lastMime = recorder.mimeType || "";
+  }
+  recorder.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+  recorder.onstop = onRecStopped;
+  recorder.start(1000);
+  recStart = Date.now();
+  $("recBtn").classList.add("rec");
+  $("recChip").style.display = "flex";
+  recTimerId = setInterval(() => {
+    const s = Math.floor((Date.now() - recStart) / 1000);
+    $("recTime").textContent = String((s / 60) | 0).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
+  }, 500);
+}
+
+function stopRec() {
+  if (recorder && recorder.state === "recording") recorder.stop();
+  clearInterval(recTimerId);
+  $("recBtn").classList.remove("rec");
+  $("recChip").style.display = "none";
+  $("recTime").textContent = "00:00";
+}
+
+function onRecStopped() {
+  const type = lastMime || (chunks[0] && chunks[0].type) || "video/mp4";
+  lastBlob = new Blob(chunks, { type });
+  const url = URL.createObjectURL(lastBlob);
+  $("reviewVideo").src = url;
+  const dl = $("dlBtn");
+  dl.href = url;
+  dl.download = "spectre-clip." + (type.includes("mp4") ? "mp4" : "webm");
+  $("review").style.display = "flex";
+}
+
+$("shareBtn").addEventListener("click", async () => {
+  if (!lastBlob) return;
+  const ext = (lastBlob.type || "").includes("mp4") ? "mp4" : "webm";
+  const file = new File([lastBlob], "spectre-clip." + ext, { type: lastBlob.type });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file] }); } catch (e) {}
+  } else $("dlBtn").click();
+});
+
+$("closeReview").addEventListener("click", () => {
+  $("review").style.display = "none";
+  const rv = $("reviewVideo");
+  rv.pause();
+  if (rv.src) { URL.revokeObjectURL(rv.src); rv.removeAttribute("src"); rv.load(); }
+});
+
+window.__spectre = {
+  ready: true,
+  setMode: i => { modeIdx = i; },
+  setGrade: v => { gradeAmt = v; },
+  flip: flipCamera,
+  facing: () => facing,
+  hasFace: () => hasFace,
+  ms: () => emaMs,
+  bands: () => BANDS,
+  nPts: () => (lm ? lm.length : 0)
+};
+</script>
+</body>
+</html>
